@@ -95,9 +95,31 @@ boost::optional<Eigen::Isometry2f> BBSLocalization::localize(const BBSLocalizati
   *best_score = min_score;
   boost::optional<DiscreteTransformation> best_trans;
 
+  auto first_queue = create_init_transset(scan_points);
   auto trans_queue = create_init_transset(scan_points);
 
   ROS_INFO_STREAM("Branch-and-Bound");
+  while (!first_queue.empty())
+  {
+    auto trans = first_queue.top();
+    first_queue.pop();
+    
+    if (trans.is_leaf())
+    {
+      *best_score = trans.score;
+      break;
+    }
+    else
+    {
+      auto children = trans.branch();
+      auto& child = children[0];
+      child.calc_score(scan_points, theta_resolution, gridmap_pyramid);
+      first_queue.push(child);
+    }
+  }
+
+  ROS_INFO("Init best_score: %f", *best_score);
+
   while (!trans_queue.empty()) {
     // std::cout << trans_queue.size() << std::endl;
 
