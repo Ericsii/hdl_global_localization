@@ -84,9 +84,11 @@ include_directories(
 
 add_library(hdl_global_localization
   src/hdl_global_localization/bbs/bbs_localization.cpp
+  src/hdl_global_localization/new_bbs/new_bbs_localization.cpp
   src/hdl_global_localization/ransac/voxelset.cpp
   src/hdl_global_localization/ransac/ransac_pose_estimation.cpp
   src/hdl_global_localization/engines/global_localization_bbs.cpp
+  src/hdl_global_localization/engines/global_localization_new_bbs.cpp
   src/hdl_global_localization/engines/global_localization_fpfh_ransac.cpp
 )
 target_link_libraries(hdl_global_localization
