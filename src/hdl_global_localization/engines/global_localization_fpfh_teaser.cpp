@@ -5,6 +5,7 @@
 #include <teaser/registration.h>
 
 #include <pcl/common/transforms.h>
+#include <pcl/filters/voxel_grid.h>
 #include <hdl_global_localization/ransac/matching_cost_evaluater_flann.hpp>
 
 namespace hdl_global_localization {
@@ -14,15 +15,35 @@ GlobalLocalizationEngineFPFH_Teaser::GlobalLocalizationEngineFPFH_Teaser(ros::No
 GlobalLocalizationEngineFPFH_Teaser::~GlobalLocalizationEngineFPFH_Teaser() {}
 
 void GlobalLocalizationEngineFPFH_Teaser::set_global_map(pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud) {
-  this->global_map = cloud;
-  this->global_map_features = extract_fpfh(cloud);
+  ROS_INFO_STREAM("Map point: " << cloud->size() << "recv.");
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr filteredCloud1(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::Indices indices;
+  pcl::removeNaNFromPointCloud(*cloud, *filteredCloud1, indices);
+
+  ROS_INFO_STREAM("Downsampling pointcloud");
+  pcl::PointCloud<pcl::PointXYZ>::Ptr filteredCloud(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::VoxelGrid<pcl::PointXYZ> filter;
+  filter.setInputCloud(filteredCloud1);
+  filter.setLeafSize(0.1f, 0.1f, 0.1f);
+  filter.filter(*filteredCloud);
+  ROS_INFO_STREAM("After filter: " << filteredCloud->size());
+
+  this->global_map = filteredCloud;
+  this->global_map_features = extract_fpfh(filteredCloud);
 
   evaluater.reset(new MatchingCostEvaluaterFlann());
   evaluater->set_target(this->global_map, private_nh.param<double>("ransac/max_correspondence_distance", 1.0));
+
+  ROS_INFO_STREAM("FPFH_Teaser map setted.");
 }
 
 GlobalLocalizationResults GlobalLocalizationEngineFPFH_Teaser::query(pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud, int max_num_candidates) {
-  auto cloud_features = extract_fpfh(cloud);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr filteredCloud(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::Indices indices;
+  pcl::removeNaNFromPointCloud(*cloud, *filteredCloud, indices);
+
+  auto cloud_features = extract_fpfh(filteredCloud);
 
   teaser::PointCloud target_cloud, source_cloud;
   teaser::FPFHCloud target_features, source_features;
@@ -33,10 +54,10 @@ GlobalLocalizationResults GlobalLocalizationEngineFPFH_Teaser::query(pcl::PointC
     target_features.push_back(global_map_features->at(i));
   }
 
-  source_cloud.reserve(cloud->size());
-  source_features.reserve(cloud->size());
-  for (int i = 0; i < cloud->size(); i++) {
-    source_cloud.push_back({cloud->at(i).x, cloud->at(i).y, cloud->at(i).z});
+  source_cloud.reserve(filteredCloud->size());
+  source_features.reserve(filteredCloud->size());
+  for (int i = 0; i < filteredCloud->size(); i++) {
+    source_cloud.push_back({filteredCloud->at(i).x, filteredCloud->at(i).y, filteredCloud->at(i).z});
     source_features.push_back(cloud_features->at(i));
   }
 
@@ -72,7 +93,7 @@ GlobalLocalizationResults GlobalLocalizationEngineFPFH_Teaser::query(pcl::PointC
   transformation.translation() = solution.translation.cast<float>();
 
   double inlier_fraction = 0.0;
-  double error = evaluater->calc_matching_error(*cloud, transformation.matrix(), &inlier_fraction);
+  double error = evaluater->calc_matching_error(*filteredCloud, transformation.matrix(), &inlier_fraction);
 
   std::vector<GlobalLocalizationResult::Ptr> results(1);
   results[0].reset(new GlobalLocalizationResult(error, inlier_fraction, transformation));

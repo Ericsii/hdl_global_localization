@@ -2,5 +2,8 @@
 <launch>
     <include file="$(find hdl_global_localization)/launch/hdl_global_localization.launch" />
 
-    <node name="hdl_global_localization_test" pkg="hdl_global_localization" type="hdl_global_localization_test" args="/root/shared_volume/map/GlobalMap.pcd"/>
+    <node name="hdl_global_localization_test" pkg="hdl_global_localization" type="hdl_global_localization_test" args="/root/shared_volume/map/GlobalMap.pcd" output="screen"/>
+
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find hdl_global_localization)/config/test.rviz"/>
+    <node name="rqt" pkg="rqt_gui" type="rqt_gui"/>
 </launch>

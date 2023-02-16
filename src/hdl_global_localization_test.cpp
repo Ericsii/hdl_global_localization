@@ -6,6 +6,7 @@
 #include <ros/ros.h>
 #include <pcl_ros/point_cloud.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <std_srvs/Trigger.h>
 
 #include <hdl_global_localization/SetGlobalLocalizationEngine.h>
 #include <hdl_global_localization/SetGlobalMap.h>
@@ -17,10 +18,11 @@ public:
     set_engine_service = nh.serviceClient<hdl_global_localization::SetGlobalLocalizationEngine>("/hdl_global_localization/set_engine");
     set_global_map_service = nh.serviceClient<hdl_global_localization::SetGlobalMap>("/hdl_global_localization/set_global_map");
     query_service = nh.serviceClient<hdl_global_localization::QueryGlobalLocalization>("/hdl_global_localization/query");
-
+    trigger_service = nh.advertiseService("trigger", &GlobalLocalizationTestNode::trigger_query, this);
+ 
     globalmap_pub = nh.advertise<sensor_msgs::PointCloud2>("/globalmap", 1, true);
     points_pub = nh.advertise<sensor_msgs::PointCloud2>("/aligned_points", 1);
-    points_sub = nh.subscribe("/velodyne_points", 1, &GlobalLocalizationTestNode::points_callback, this);
+    points_sub = nh.subscribe("/rslidar_points", 1, &GlobalLocalizationTestNode::points_callback, this);
   }
 
   void set_engine(const std::string& engine_name) {
@@ -47,14 +49,23 @@ public:
   void points_callback(sensor_msgs::PointCloud2ConstPtr cloud_msg) {
     ROS_INFO_STREAM("Callback");
 
+    cloud_msg_ = *cloud_msg;
+  }
+
+  bool trigger_query(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res)
+  {
+    ROS_INFO_STREAM("Make query");
+
     hdl_global_localization::QueryGlobalLocalization srv;
-    srv.request.cloud = *cloud_msg;
+    srv.request.cloud = cloud_msg_;
     srv.request.max_num_candidates = 1;
 
+    ROS_INFO_STREAM("Query");
     if (!query_service.call(srv) || srv.response.poses.empty()) {
       ROS_INFO_STREAM("Failed to find a global localization solution");
-      return;
+      return false;
     }
+    ROS_INFO_STREAM("Get");
 
     const auto& estimated = srv.response.poses[0];
     Eigen::Quaternionf quat(estimated.orientation.w, estimated.orientation.x, estimated.orientation.y, estimated.orientation.z);
@@ -65,13 +76,15 @@ public:
     transformation.translation() = trans;
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::fromROSMsg(*cloud_msg, *cloud);
+    pcl::fromROSMsg(cloud_msg_, *cloud);
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr transformed(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::transformPointCloud(*cloud, *transformed, transformation);
     transformed->header.frame_id = "map";
 
     points_pub.publish(transformed);
+
+    return true;
   }
 
 private:
@@ -79,11 +92,14 @@ private:
   ros::ServiceClient set_engine_service;
   ros::ServiceClient set_global_map_service;
   ros::ServiceClient query_service;
+  ros::ServiceServer trigger_service;
 
   ros::Publisher globalmap_pub;
 
   ros::Publisher points_pub;
   ros::Subscriber points_sub;
+
+  sensor_msgs::PointCloud2 cloud_msg_;
 };
 
 int main(int argc, char** argv) {
